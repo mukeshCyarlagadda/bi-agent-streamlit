@@ -1,0 +1,125 @@
+
+******************************************************************************************
+#Error/Exception Handling:
+
+ValueError        # Raised when an operation/function receives an argument with right type but inappropriate value
+TypeError        # Raised when an operation/function is applied to an object of inappropriate type
+AttributeError   # Raised when attribute reference or assignment fails
+KeyError        # Raised when a dictionary key is not found
+IndexError      # Raised when a sequence subscript is out of range
+FileNotFoundError # Raised when a file or directory is requested but cannot be found
+ZeroDivisionError # Raised when division or modulo by zero
+ImportError     # Raised when an import statement fails
+RuntimeError    # Raised when an error is detected that doesn't fall in any other category
+SyntaxError     # Raised when parser encounters a syntax error
+NameError       # Raised when a local or global name is not found
+
+
+******************************************************************************************
+#Exception Hierarchy:
+
+BaseException
+ ├── SystemExit
+ ├── KeyboardInterrupt
+ ├── GeneratorExit
+ └── Exception
+      ├── StopIteration
+      ├── ArithmeticError
+      │    ├── FloatingPointError
+      │    ├── OverflowError
+      │    └── ZeroDivisionError
+      ├── AssertionError
+      ├── AttributeError
+      ├── BufferError
+      ├── EOFError
+      ├── ImportError
+      │    └── ModuleNotFoundError
+      ├── LookupError
+      │    ├── IndexError
+      │    └── KeyError
+      ├── MemoryError
+      ├── NameError
+      │    └── UnboundLocalError
+      ├── OSError
+      │    ├── BlockingIOError
+      │    ├── ChildProcessError
+      │    ├── ConnectionError
+      │    ├── FileExistsError
+      │    ├── FileNotFoundError
+      │    ├── InterruptedError
+      │    ├── IsADirectoryError
+      │    ├── NotADirectoryError
+      │    ├── PermissionError
+      │    └── TimeoutError
+      ├── ReferenceError
+      ├── RuntimeError
+      │    └── NotImplementedError
+      ├── SyntaxError
+      │    └── IndentationError
+      ├── SystemError
+      ├── TypeError
+      ├── ValueError
+      └── Warning
+
+
+******************************************************************************************
+#Example:1
+
+try:
+    number = int("123")
+except ValueError:
+    print("Error occurred")
+else:
+    # This runs only if try was successful
+    print("Conversion successful!")
+finally:
+    # This always runs, regardless of success or failure
+    print("Process completed")
+******************************************************************************************
+#Example2: 
+# ValueError: When the type is right but the value is wrong
+try:
+    age = int("123")  # This works
+    age = int("abc")  # This raises ValueError
+except ValueError:
+    print("Invalid number")
+
+# TypeError: When the type is wrong
+try:
+    result = "5" + 5  # String + Integer
+except TypeError:
+    print("Can't add string and integer")
+
+# FileNotFoundError: When file operations fail
+try:
+    file = open("missing.txt")
+except FileNotFoundError:
+    print("File doesn't exist")
+
+# KeyError: When dictionary key lookup fails
+try:
+    data = {"name": "John"}
+    print(data["age"])
+except KeyError:
+    print("Key not found")
+
+
+
+
+
+******************************************************************************************#Think of it like this:
+
+try: "Try to do this"
+except: "If an error occurs, do this instead"
+else: "If no error occurs, do this additional thing"
+finally: "Do this no matter what happened"
+
+Just like with if-else, the code follows only one path:
+
+If try succeeds → skip except → run else → run finally
+If try fails → run matching except → skip else → run finally
+
+******************************************************************************************
+pip install snowflake-sqlalchemy
+pip install snowflake-connector-python
+pip install cryptography
