@@ -7,3 +7,14 @@ sqlalchemy>=2.0.0
 pyyaml>=6.0
 IPython>=8.0.0
 graphviz
+streamlit
+pandas
+matplotlib
+plotly
+langchain-openai
+langchain-community
+langgraph
+python-dotenv
+sqlalchemy
+openpyxl
+pymysql
