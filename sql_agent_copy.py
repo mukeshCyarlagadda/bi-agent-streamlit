@@ -10,14 +10,14 @@ from PIL import Image
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
 from langchain_community.utilities import SQLDatabase
-from langchain.chains import create_sql_query_chain
+from langchain_classic.chains.sql_database.query import create_sql_query_chain
 from langgraph.graph import StateGraph, END
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from sql_agent.utils import (
+from utils import (
     extract_sql_code,
     tag_question_type,
     extract_python_code
@@ -323,7 +323,7 @@ def initialize_dag(db_uri: str):
     sql_generator = create_sql_query_chain(
         llm=llm_for_sql,
         db=db,
-        k=int(1e7),
+        k=500,
         prompt=chain_prompt
     )
 

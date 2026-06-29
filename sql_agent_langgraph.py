@@ -1,32 +1,19 @@
 # sql_agent_langgraph.py
-# At the very top of sql_agent_langgraph.py
 import os
-from dotenv import load_dotenv
-load_dotenv()  # <-- This will load the .env file with your OPENAI_API_KEY
-
-print("Working directory:", os.getcwd())
-print("OPENAI_API_KEY:", os.getenv("OPENAI_API_KEY"))
-print("🔑 Using API Key:", os.getenv("OPENAI_API_KEY"))
-
-import os
+import logging
+import numpy as np
 import pandas as pd
 import sqlalchemy as sql
 import matplotlib.pyplot as plt
-import plotly.express as px
 from typing import TypedDict
-from PIL import Image
+from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import PromptTemplate
 from langchain_community.utilities import SQLDatabase
-from langchain.chains import create_sql_query_chain
+from langchain_classic.chains.sql_database.query import create_sql_query_chain
 from langgraph.graph import StateGraph, END
 
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-
-
-from sql_agent.utils import (
+from utils import (
     extract_sql_code,
     tag_question_type,
     extract_python_code,
@@ -34,6 +21,10 @@ from sql_agent.utils import (
     is_multi_statement_sql,
     extract_table_name_from_sql
 )
+
+load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # ------------------------------
 # 1. Define the State structure
@@ -73,37 +64,29 @@ def convert_dataframe(state: GraphState, conn):
     Handles both single and multi-statement SQL queries.
     """
     sql_query = state["sql_query"]
-    
-    # Check if this is a multi-statement SQL
+
     if is_multi_statement_sql(sql_query):
-        print("DEBUG: Multi-statement SQL detected")
+        logger.debug("Multi-statement SQL detected")
         statements = split_sql_statements(sql_query)
-        
-        # Execute each statement and collect results
         multi_table_data = []
         for i, statement in enumerate(statements):
             try:
-                print(f"DEBUG: Executing statement {i+1}: {statement[:50]}...")
                 df = pd.read_sql(statement, conn)
                 table_name = extract_table_name_from_sql(statement)
-                
                 multi_table_data.append({
                     "table_name": table_name,
                     "dataframe": {col: df[col].tolist() for col in df.columns},
                     "sql_statement": statement
                 })
             except Exception as e:
-                print(f"DEBUG: Error executing statement {i+1}: {e}")
+                logger.error("Error executing statement %d: %s", i + 1, e)
                 multi_table_data.append({
-                    "table_name": f"Error in Statement {i+1}",
+                    "table_name": f"Error in Statement {i + 1}",
                     "error": str(e),
                     "sql_statement": statement
                 })
-        
         return {**state, "data": {"multi_table": True, "tables": multi_table_data}}
-    
     else:
-        # Single statement - existing logic
         df = pd.read_sql(sql_query, conn)
         return {**state, "data": {col: df[col].tolist() for col in df.columns}}
 
@@ -119,15 +102,19 @@ def generate_chart_instructions(state: GraphState, llm):
     """
     Calls an LLM to generate Python script for visualizing data.
     """
-    print("\nDEBUG: Entering generate_chart_instructions")
     question = state["question"]
     data = state.get("data")
 
     if data is None:
-        print("DEBUG: No data found in state")
         return {**state, "chart_script": "Error: No DataFrame in state."}
 
-    # Prompt to determine chart type and generate appropriate visualization
+    # Multi-table data cannot be charted as a single frame; flatten to first table
+    if isinstance(data, dict) and data.get("multi_table"):
+        tables = data.get("tables", [])
+        if not tables or "dataframe" not in tables[0]:
+            return {**state, "chart_script": "Error: No suitable data for chart."}
+        data = tables[0]["dataframe"]
+
     prompt = f"""
     Analyze the following question and data visualization requirements:
     Question: "{question}"
@@ -153,16 +140,9 @@ def generate_chart_instructions(state: GraphState, llm):
     Do NOT wrap the code in a function.
     """
 
-    # Generate chart code using LLM
     response = llm.invoke(prompt)
-    
-    # Extract Python code using utility function
     chart_script = extract_python_code(response)
-    
-    print("DEBUG: Generated Chart Script")
-    print(f"DEBUG: Chart script length: {len(chart_script)}")
-    print(f"DEBUG: Chart script:\n{chart_script}")
-
+    logger.debug("Generated chart script (%d chars)", len(chart_script))
     return {**state, "chart_script": chart_script}
 
 
@@ -170,76 +150,42 @@ def execute_chart_code(state: GraphState):
     """
     Executes the generated Python script to create a chart.
     """
-    print("\nDEBUG: Entering execute_chart_code")
+    import time
+    import uuid
+
     chart_script = state.get("chart_script", "")
-    
     if not chart_script or chart_script.startswith("Error"):
-        print("DEBUG: No valid chart script found")
         return {**state, "chart_output": "Error: No chart script available"}
 
     df_data = state.get("data", {})
-    
-    # Convert dict back to DataFrame
+    # Multi-table: use first table's dataframe dict
+    if isinstance(df_data, dict) and df_data.get("multi_table"):
+        tables = df_data.get("tables", [])
+        df_data = tables[0]["dataframe"] if tables and "dataframe" in tables[0] else {}
+
     df = pd.DataFrame(df_data)
-    print(f"DEBUG: DataFrame shape: {df.shape}")
-    
-    # Clear any existing plots
-    plt.close('all')
-    
+    plt.close("all")
+
     try:
-        print("DEBUG: Executing chart generation code")
-        
-        # Create a new figure
         plt.figure(figsize=(12, 6))
-        
-        # Create a local namespace with the DataFrame
-        local_namespace = {
-            'df': df,
-            'plt': plt,
-            'pd': pd,
-            'np': np
-        }
-        
-        # Execute the chart generation code
-        exec(chart_script, local_namespace)
-        
-        # Ensure the output directory exists
-        output_dir = 'generated_charts'
+        local_namespace = {"df": df, "plt": plt, "pd": pd, "np": np}
+        exec(chart_script, local_namespace)  # noqa: S102 — LLM output, sandboxed namespace
+
+        output_dir = "generated_charts"
         os.makedirs(output_dir, exist_ok=True)
-        
-        # Generate unique filename using timestamp and random string
-        import time
-        import random
-        import string
-        
-        timestamp = int(time.time())
-        random_str = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
-        filename = f'chart_{timestamp}_{random_str}.png'
+        filename = f"chart_{int(time.time())}_{uuid.uuid4().hex[:6]}.png"
         output_path = os.path.join(output_dir, filename)
-        
-        # Save the figure
-        print(f"DEBUG: Saving chart to {output_path}")
-        plt.savefig(output_path, 
-                   bbox_inches='tight', 
-                   dpi=300, 
-                   pad_inches=0.1,
-                   facecolor='white')
-        
-        plt.close('all')
-        
-        print(f"DEBUG: Chart saved successfully to {output_path}")
-        
+
+        plt.savefig(output_path, bbox_inches="tight", dpi=150, pad_inches=0.1, facecolor="white")
+        logger.info("Chart saved to %s", output_path)
         return {**state, "chart_output": output_path}
-        
+
     except Exception as e:
-        print(f"DEBUG: Error in execute_chart_code: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        plt.close('all')
+        logger.error("Chart execution failed: %s", e)
         return {**state, "chart_output": f"Error executing chart code: {e}"}
-        
+
     finally:
-        plt.close('all')
+        plt.close("all")
        
 def state_printer(state: GraphState):
     """
@@ -248,15 +194,12 @@ def state_printer(state: GraphState):
     """
     outputs = {}
     
-    # Check for DataFrame data
     if "data" in state and isinstance(state["data"], dict):
         try:
-            # Check if this is multi-table data
             if state["data"].get("multi_table", False):
                 outputs["multi_table_data"] = state["data"]["tables"]
-                print(f"DEBUG: Processing {len(state['data']['tables'])} tables")
+                logger.debug("Processing %d tables", len(state["data"]["tables"]))
             else:
-                # Single table - existing logic
                 outputs["dataframe"] = pd.DataFrame(state["data"])
         except Exception as e:
             outputs["error"] = f"Error creating DataFrame: {str(e)}"
@@ -272,20 +215,11 @@ def state_printer(state: GraphState):
     return {**state, "final_output": outputs} 
 
 def debug_state(state: GraphState):
-    """
-    Helper function to print the current state for debugging.
-    """
-    print("\nDEBUG State Contents:")
     for key, value in state.items():
-        print(f"{key}: {type(value)}")
-        if isinstance(value, dict):
-            print(f"  {value}")
-        elif isinstance(value, pd.DataFrame):
-            print(f"  Shape: {value.shape}")
-            print(f"  Columns: {value.columns.tolist()}")
+        if isinstance(value, pd.DataFrame):
+            logger.debug("%s: DataFrame shape=%s cols=%s", key, value.shape, value.columns.tolist())
         else:
-            print(f"  {value}")
-    print("-" * 50)
+            logger.debug("%s (%s): %s", key, type(value).__name__, value)
 
 # ------------------------------
 # 3. Build & Compile the DAG
@@ -346,7 +280,7 @@ def initialize_dag(db_uri: str):
     Connects to DB, sets up sql_generator, and compiles the DAG. 
     Returns the compiled DAG (app).
     """
-    print("✅ initialize_dag: Connecting to DB & building DAG")
+    logger.info("Connecting to DB and building DAG")
 
     # 1. Create DB engine & conn
     sql_engine = sql.create_engine(db_uri)
@@ -373,7 +307,7 @@ def initialize_dag(db_uri: str):
     sql_generator = create_sql_query_chain(
         llm=llm_for_sql,
         db=db,
-        k=int(1e7),
+        k=500,
         prompt=chain_prompt
     )
 
@@ -382,33 +316,6 @@ def initialize_dag(db_uri: str):
     return app
 
 
-'''if __name__ == "__main__":
-    # 1. Provide a db_uri
-    db_uri =db_uri = "sqlite:///C:\\BI_database\\dental_clinic.db"
-  # or your actual path
-
-    # 2. Initialize the DAG
-    app = initialize_dag(db_uri)
-
-    # 3. Test a question
-    QUESTION = """
-      give the details of all patients 
-    """
-    inputs = {"question": QUESTION}
-
-    print("=== MANUAL TEST: DAG Invoking with question ===")
-    # 4. Invoke the DAG and collect states
-    results = []
-    for step_output in app.stream(inputs):
-        print(step_output)
-        results.append(step_output)
-    
-    # 5. After execution, check if chart was generated
-    final_output = results[-1].get('state_printer', {}).get('final_output')
-    if isinstance(final_output, str) and final_output.endswith('.png'):
-        print(f"\nChart has been saved to: {final_output}")"""
-       
-'''
 
 
 
