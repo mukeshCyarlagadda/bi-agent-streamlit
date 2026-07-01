@@ -39,8 +39,8 @@ from agent.state import GraphState
 
 # ── Plotly chart constants ────────────────────────────────────────────────────
 _CHART_COLORS = [
-    "#6EE7B7", "#93C5FD", "#F9A8D4", "#FCD34D",
-    "#A78BFA", "#34D399", "#FB923C", "#38BDF8",
+    "#F59E0B", "#FB923C", "#10B981", "#60A5FA",
+    "#F87171", "#A78BFA", "#FBBF24", "#34D399",
 ]
 _CHART_THEME = "plotly_dark"
 
@@ -187,6 +187,61 @@ async def handle_chitchat(state: GraphState, llm) -> dict:
     return {"direct_response": reply, "final_output": {"message": reply}}
 
 
+# ── SQL retry hint extractor ──────────────────────────────────────────────────
+
+import re as _re
+
+def _error_hint(error_msg: str) -> str:
+    """
+    Parse a SQL error string and return a targeted natural-language hint
+    that helps the LLM avoid repeating the same mistake on retry.
+    """
+    msg = error_msg.lower()
+
+    # "no such column: alias.Column" — alias/column mismatch
+    m = _re.search(r"no such column[:\s]+([`'\"]?)(\w+)\.(\w+)\1", error_msg, _re.IGNORECASE)
+    if m:
+        alias, col = m.group(2), m.group(3)
+        return (
+            f"Hint: '{alias}.{col}' is invalid — '{alias}' is an alias for a table "
+            f"that does NOT have a column named '{col}'. "
+            f"Check which table in your JOIN actually owns '{col}' and use that table's alias instead.\n"
+        )
+
+    # "no such column: Column" — column doesn't exist at all
+    m = _re.search(r"no such column[:\s]+([`'\"]?)(\w+)\1", error_msg, _re.IGNORECASE)
+    if m:
+        col = m.group(2)
+        return (
+            f"Hint: column '{col}' does not exist. "
+            f"Check the exact column name in the schema — it may be spelled differently or belong to a different table.\n"
+        )
+
+    # "no such table"
+    m = _re.search(r"no such table[:\s]+([`'\"]?)(\w+)\1", error_msg, _re.IGNORECASE)
+    if m:
+        tbl = m.group(2)
+        return (
+            f"Hint: table '{tbl}' does not exist. "
+            f"Use only tables listed in the schema provided.\n"
+        )
+
+    # ambiguous column name
+    if "ambiguous" in msg:
+        m = _re.search(r"ambiguous[^:]*[:\s]+([`'\"]?)(\w+)\1", error_msg, _re.IGNORECASE)
+        col = m.group(2) if m else "a column"
+        return (
+            f"Hint: '{col}' is ambiguous — it exists in more than one joined table. "
+            f"Qualify it with the correct table alias (e.g. alias.{col}).\n"
+        )
+
+    # syntax error
+    if "syntax error" in msg:
+        return "Hint: there is a SQL syntax error. Check for missing commas, unmatched parentheses, or invalid keywords.\n"
+
+    return ""   # no specific hint available — generic retry message is enough
+
+
 # ── Node 3 — generate SQL ─────────────────────────────────────────────────────
 
 async def generate_sql(state: GraphState, sql_generator) -> dict:
@@ -199,10 +254,12 @@ async def generate_sql(state: GraphState, sql_generator) -> dict:
 
     question = state["question"]
     if retry_count > 0 and sql_error:
+        hint = _error_hint(sql_error)
         question = (
             f"RETRY ATTEMPT {retry_count + 1}: Your previous SQL failed.\n"
             f"Error: {sql_error}\n"
-            f"Fix the root cause — do NOT repeat the same query.\n\n"
+            f"{hint}"
+            f"Rules: do NOT repeat the same query. Re-read the schema carefully before writing SQL.\n\n"
             f"Original question: {question}"
         )
 
@@ -439,7 +496,10 @@ def _render_plotly_sync(chart_script: str, data: dict) -> str:
     df = pd.DataFrame(data)
     local_ns: dict = {
         "__builtins__": _EXEC_BUILTINS,
-        "df": df, "px": px, "go": go, "pd": pd, "np": np,
+        "df": df,
+        # Common LLM aliases for the dataframe — all point to the same object
+        "df_filtered": df, "df_plot": df, "df_chart": df, "data": df,
+        "px": px, "go": go, "pd": pd, "np": np,
         "COLORS": _CHART_COLORS, "THEME": _CHART_THEME,
     }
     try:
@@ -454,16 +514,48 @@ def _render_plotly_sync(chart_script: str, data: dict) -> str:
         raise RuntimeError("Chart script did not assign to 'fig'")
 
     fig.update_layout(
-        paper_bgcolor="rgba(10,10,20,0.97)",
-        plot_bgcolor="rgba(10,10,20,0.97)",
-        font=dict(color="#e5e7eb", family="Inter, system-ui, sans-serif"),
-        margin=dict(l=50, r=30, t=60, b=50),
-        legend=dict(bgcolor="rgba(255,255,255,0.05)", borderwidth=0),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        colorway=_CHART_COLORS,
+        font=dict(color="rgba(255,255,255,0.72)", family="Inter, system-ui, sans-serif"),
+        margin=dict(l=48, r=24, t=52, b=44),
+        legend=dict(
+            bgcolor="rgba(0,0,0,0)",
+            borderwidth=0,
+            font=dict(size=11, color="rgba(255,255,255,0.60)"),
+        ),
+        xaxis=dict(
+            gridcolor="rgba(255,255,255,0.06)",
+            linecolor="rgba(255,255,255,0.08)",
+            tickfont=dict(size=11, color="rgba(255,255,255,0.50)"),
+            title_font=dict(size=12, color="rgba(255,255,255,0.60)"),
+        ),
+        yaxis=dict(
+            gridcolor="rgba(255,255,255,0.06)",
+            linecolor="rgba(255,255,255,0.08)",
+            tickfont=dict(size=11, color="rgba(255,255,255,0.50)"),
+            title_font=dict(size=12, color="rgba(255,255,255,0.60)"),
+        ),
+        title_font=dict(size=14, color="rgba(255,255,255,0.80)"),
+    )
+    # Thicken lines and enlarge markers so they read well on dark glass
+    fig.update_traces(
+        selector=dict(type="scatter", mode="lines"),
+        line=dict(width=2.5),
+    )
+    fig.update_traces(
+        selector=dict(type="scatter"),
+        marker=dict(size=7),
+    )
+    fig.update_traces(
+        selector=dict(type="bar"),
+        marker_line_width=0,
+        opacity=0.92,
     )
     return pio.to_html(
         fig,
-        full_html=True,
-        include_plotlyjs="cdn",
+        full_html=False,
+        include_plotlyjs=False,
         config={"responsive": True, "displayModeBar": False},
     )
 

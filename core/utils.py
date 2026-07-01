@@ -57,21 +57,23 @@ def _starts_with_sql_keyword(s: str) -> bool:
 def extract_python_code(response: object) -> str:
     """
     Extract Python code from an LLM response.
-    Looks for ```python ... ``` blocks first, then falls back to raw text.
+    Looks for ```python ... ``` or ``` blocks first, then returns the raw text.
+    Never filters individual lines — continuation lines of multi-line calls must be preserved.
     """
     text: str = response.content if hasattr(response, "content") else str(response)
     text = text.replace("Python Script:", "").strip()
 
+    # Try ```python ... ``` fence first
     m = re.search(r"```python\s*([\s\S]+?)\s*```", text, re.DOTALL)
     if m:
         return m.group(1).strip()
 
-    # Heuristic: collect lines that look like Python
-    python_keywords = ("def ", "import ", "plt.", "sns.", "px.", "fig.", "ax.")
-    lines = [l for l in text.splitlines() if any(kw in l for kw in python_keywords)]
-    if lines:
-        return "\n".join(lines).strip()
+    # Try plain ``` ... ``` fence
+    m = re.search(r"```\s*([\s\S]+?)\s*```", text, re.DOTALL)
+    if m:
+        return m.group(1).strip()
 
+    # No fence — return the raw text wholesale so multi-line calls stay intact
     return text.strip()
 
 

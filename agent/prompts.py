@@ -8,8 +8,14 @@ from langchain_core.prompts import PromptTemplate
 # {input}, {table_info}, {top_k} are filled by LangChain's create_sql_query_chain.
 # {retry_context} is injected by our node when retrying after a failed attempt.
 SQL_GENERATION_TEMPLATE = """\
-Preserve the exact case of all string values in WHERE clauses — never normalise capitalisation.
-Use only the tables and columns that exist in the schema below.
+Rules:
+- Use ONLY tables and columns that exist in the schema below.
+- Preserve the exact case of all string values in WHERE clauses.
+- When JOINing multiple tables, assign a short alias to each table and ALWAYS qualify
+  every column reference with the correct alias for the table that actually owns that column.
+  Wrong: SELECT a.AlbumId FROM Artist a JOIN Album al ...  (AlbumId is on Album, not Artist)
+  Right: SELECT al.AlbumId FROM Artist a JOIN Album al ...
+- For aggregations across JOINs, use COUNT(DISTINCT alias.PrimaryKey) to avoid row inflation.
 
 User Query: {input}
 Table Information: {table_info}
@@ -81,20 +87,25 @@ Rules:
    - px.bar()        → compare quantities across categories
    - px.line()       → trends over time or ordered sequences
    - px.pie()        → proportional share (only when ≤ 8 slices)
-   - px.scatter()    → relationship between two numeric columns
+   - px.scatter()    → relationship between two numeric columns; for bubble charts
+                       add size=<col>, color=<col>, hover_name=<label_col>
    - px.histogram()  → distribution of a single numeric column
    - px.area()       → cumulative trends / stacked areas
    - go.Figure()     → only for custom/combined charts
 2. Always pass template=THEME to px calls or fig.update_layout(template=THEME).
-3. Set a clear, concise title. Label axes when using go directly.
-4. For bar charts with many categories, sort by value descending.
-5. For pie charts, add hole=0.35 for a modern donut style (px.pie supports this).
-6. The LAST statement must assign the final figure to a variable named exactly `fig`.
+3. Always pass color_discrete_sequence=COLORS for categorical color (bar, line, scatter, pie).
+   For single-series charts use color_discrete_sequence=[COLORS[0]].
+   Never use default Plotly colors.
+4. Set a clear, concise title. Label axes when using go directly.
+5. For bar charts with many categories, sort by value descending.
+6. For pie charts, add hole=0.35 for a modern donut style (px.pie supports this).
+7. The LAST statement must assign the final figure to a variable named exactly `fig`.
    This is mandatory — the runtime reads `fig` from the local namespace after exec().
    Wrong: `chart = px.bar(...)` — Right: `fig = px.bar(...)`
    Do NOT call fig.show() or fig.write_html().
-7. Do NOT wrap code in a function, class, or if-block.
-8. Do NOT use any import statements — all libraries are already in scope.
+8. Do NOT wrap code in a function, class, or if-block.
+9. Do NOT use any import statements — all libraries are already in scope.
+10. For go.Figure() charts, set each trace's marker_color or line_color explicitly from COLORS.
 
 Return ONLY the Python code — no explanations, no markdown fences, no backticks.\
 """

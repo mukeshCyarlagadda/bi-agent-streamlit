@@ -90,7 +90,18 @@ def _load_instructions(db_type: str, tables: list[str]) -> str:
 
 
 def build_graph(sql_generator) -> object:
-    llm = ChatOpenAI(model=settings.openai_model, api_key=settings.openai_api_key)
+    # Classify + chitchat — short outputs, no token budget needed
+    llm = ChatOpenAI(
+        model=settings.openai_model,
+        api_key=settings.openai_api_key,
+        max_tokens=512,
+    )
+    # Chart code generation — needs room for multi-line Plotly scripts
+    llm_chart = ChatOpenAI(
+        model=settings.openai_model,
+        api_key=settings.openai_api_key,
+        max_tokens=1024,
+    )
     workflow = StateGraph(GraphState)
 
     # Async wrappers — Python has no async lambda
@@ -104,7 +115,7 @@ def build_graph(sql_generator) -> object:
         return await generate_sql(s, sql_generator)
 
     async def _generate_chart_instructions(s):
-        return await generate_chart_instructions(s, llm)
+        return await generate_chart_instructions(s, llm_chart)
 
     # ── Nodes ────────────────────────────────────────────────────────────────
     workflow.add_node("classify_question",           _classify_question)

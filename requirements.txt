@@ -16,7 +16,12 @@ httpx>=0.27.0
 
 # Database
 sqlalchemy>=2.0.0
-pymysql>=1.1.0
+pymysql>=1.1.0          # MySQL
+psycopg2-binary>=2.9.0  # PostgreSQL
+duckdb-engine>=0.9.0    # DuckDB
+snowflake-sqlalchemy>=1.5.0   # Snowflake
+sqlalchemy-bigquery>=1.9.0    # BigQuery
+pyodbc>=4.0.0           # MSSQL (also needs ODBC Driver 17 installed on OS)
 openpyxl>=3.1.0
 
 # Data
