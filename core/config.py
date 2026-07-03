@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     # Set hitl_sql_preview=true to also intercept every SELECT for approval.
     hitl_sql_preview: bool = False
 
+    # Supabase — auth provider
+    # Set in .env after creating your project at supabase.com
+    supabase_url: str = ""
+    supabase_secret_key: str = ""    # sb_secret_... key from Supabase dashboard
+
     # API — where FastAPI listens and what URL the UI uses to reach it
     api_host: str = "0.0.0.0"
     api_port: int = 8000

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from api.dependencies import get_session
 from api.models.query import ApproveRequest, QueryRequest, QueryResponse
 from api.session_store import Session
+from core.auth import get_current_user
 from services.query_service import resume_query, run_query
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,7 @@ router = APIRouter()
 
 
 @router.post("/query", response_model=QueryResponse)
-async def query(req: QueryRequest, session: Session = Depends(get_session)) -> QueryResponse:
+async def query(req: QueryRequest, session: Session = Depends(get_session), _user: dict = Depends(get_current_user)) -> QueryResponse:
     if not req.question.strip():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -40,7 +41,7 @@ async def query(req: QueryRequest, session: Session = Depends(get_session)) -> Q
 
 
 @router.post("/query/approve", response_model=QueryResponse)
-async def approve(req: ApproveRequest, session: Session = Depends(get_session)) -> QueryResponse:
+async def approve(req: ApproveRequest, session: Session = Depends(get_session), _user: dict = Depends(get_current_user)) -> QueryResponse:
     """
     Resume a graph suspended at a confirm_sql interrupt().
 

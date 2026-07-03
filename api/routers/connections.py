@@ -13,6 +13,7 @@ from agent.graph import initialize_dag
 from api.dependencies import get_session
 from api.models.connection import ConnectRequest, ConnectResponse
 from api.session_store import Session, session_store
+from core.auth import get_current_user
 from core.database import DatabaseManager
 
 logger = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ router = APIRouter()
 
 
 @router.post("/connect", response_model=ConnectResponse, status_code=status.HTTP_201_CREATED)
-async def connect(req: ConnectRequest) -> ConnectResponse:
+async def connect(req: ConnectRequest, _user: dict = Depends(get_current_user)) -> ConnectResponse:
     """
     1. Validate the DB credentials by opening a test connection.
     2. Compile the LangGraph DAG (inspects the DB schema once).
