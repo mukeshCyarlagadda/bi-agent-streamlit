@@ -117,6 +117,24 @@ async def disconnect(session: Session = Depends(get_session)) -> None:
     logger.info("Session deleted: %s", session.session_id[:8])
 
 
+class DeleteFileRequest(BaseModel):
+    storage_key: str
+
+
+@router.delete("/files", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_file(
+    req: DeleteFileRequest,
+    _user: dict = Depends(get_current_user),
+) -> None:
+    """Delete a SQLite backup from Supabase Storage when a file project is removed."""
+    from core.storage import BUCKET, _client
+    try:
+        _client().storage.from_(BUCKET).remove([req.storage_key])
+        logger.info("Storage file deleted: %s (user=%s)", req.storage_key, _user["id"][:8])
+    except Exception as exc:
+        logger.warning("Storage delete failed for %s: %s", req.storage_key, exc)
+
+
 class ReconnectFileRequest(BaseModel):
     db_path: str
 
