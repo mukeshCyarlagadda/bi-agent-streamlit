@@ -156,23 +156,28 @@ def _extract_result(steps: dict, session: "Session", question: str) -> QueryResp
 
 
 async def run_general_query(question: str) -> QueryResponse:
-    """Respond to a question when no database session is active."""
+    """Respond to a question when no database session is active.
+
+    Uses the same instructions.md context as the full agent, but with no DB
+    connected. Data questions get a polite prompt to connect first.
+    """
     from openai import AsyncOpenAI
+    from agent.graph import _load_instructions
     from core.config import settings
+
+    base_instructions = _load_instructions(db_type="none", tables=[])
+    system_prompt = (
+        f"{base_instructions}\n\n"
+        "No database is currently connected. "
+        "For data or analysis questions, tell the user to connect a database "
+        "or upload a file (CSV, Excel, PDF) using the panel on the left."
+    )
 
     client = AsyncOpenAI(api_key=settings.openai_api_key)
     resp = await client.chat.completions.create(
         model=settings.openai_model,
         messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are a friendly BI (Business Intelligence) assistant. "
-                    "No database is currently connected. "
-                    "Answer general questions helpfully. "
-                    "For data or analysis questions, politely ask the user to connect a database or upload a file first."
-                ),
-            },
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": question},
         ],
         max_tokens=500,
