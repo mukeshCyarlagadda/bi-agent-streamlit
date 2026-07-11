@@ -21,6 +21,7 @@ from api.models.connection import ConnectResponse
 from api.session_store import session_store
 from core.auth import get_current_user
 from core.file_parser import ALL_SUFFIXES, file_to_sqlite
+from core.storage import upload_sqlite
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -86,10 +87,14 @@ async def upload_file(
     )
     logger.info('Upload session: %s | user=%s | %s', session_id[:8], user_id[:8], message)
 
+    # Back up SQLite to Supabase Storage so it survives server restarts.
+    # storage_key is the relative path used to restore it later (e.g. "abc/def.db").
+    storage_key = upload_sqlite(db_path)
+
     return ConnectResponse(
         session_id=session_id,
         db_type=db_type,
         tables=tables,
         message=message,
-        db_path=db_path,
+        db_path=storage_key,
     )

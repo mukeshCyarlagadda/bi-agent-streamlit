@@ -58,6 +58,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # ---------- startup ----------
     logger.info("BI Agent API starting (model=%s)", settings.openai_model)
+    from core.storage import ensure_bucket
+    ensure_bucket()
     yield
     # ---------- shutdown ----------
     logger.info("BI Agent API shutting down")

@@ -18,6 +18,7 @@ from api.models.connection import ConnectRequest, ConnectResponse
 from api.session_store import Session, session_store
 from core.auth import get_current_user
 from core.database import DatabaseManager
+from core.storage import download_sqlite, key_to_local
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -130,14 +131,29 @@ async def reconnect_file(
     Called when the in-memory session has expired (e.g. after a server restart)
     but the SQLite file still exists on disk.
     """
-    p = Path(req.db_path)
-    if not p.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="SQLite file not found on disk. Please re-upload the file.",
-        )
+    # db_path may be an absolute local path (legacy) or a storage key (new format).
+    # Storage keys are relative (no leading "/"); absolute paths are legacy local paths.
+    raw = req.db_path
+    if Path(raw).is_absolute():
+        p = Path(raw)
+        if not p.exists():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="SQLite file not found on disk. Please re-upload the file.",
+            )
+    else:
+        # Storage key — use local cache if present, otherwise download from Supabase.
+        p = key_to_local(raw)
+        if not p.exists():
+            try:
+                p = download_sqlite(raw)
+            except RuntimeError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Could not restore file from storage. Please re-upload. ({exc})",
+                )
 
-    db_uri = f"sqlite:///{req.db_path}"
+    db_uri = f"sqlite:///{p}"
     try:
         engine = create_engine(db_uri)
         with engine.connect() as conn:
@@ -173,5 +189,5 @@ async def reconnect_file(
         db_type="file",
         tables=tables,
         message=f"Reconnected to {p.name}",
-        db_path=req.db_path,
+        db_path=raw,
     )
