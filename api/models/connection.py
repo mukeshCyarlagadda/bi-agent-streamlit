@@ -67,3 +67,4 @@ class ConnectResponse(BaseModel):
     db_type: str
     tables: List[str]
     message: str
+    db_path: Optional[str] = None   # set for file uploads; lets frontend restore sessions

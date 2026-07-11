@@ -35,8 +35,11 @@ plotly>=5.0.0       # interactive charts → HTML output
 # UI
 streamlit>=1.35.0
 
-# PDF export
+# PDF export + file upload parsing
 fpdf2>=2.7.0
+pdfplumber>=0.11.0        # extract tables from digital PDFs
+PyMuPDF>=1.24.0           # render scanned PDF pages → images for OCR
+python-multipart>=0.0.9   # FastAPI multipart/file upload
 
 # Auth
 supabase>=2.3.0

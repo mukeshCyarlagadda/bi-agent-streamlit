@@ -46,7 +46,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.middleware.request_logging import RequestLoggingMiddleware
-from api.routers import chat, connections, export, query
+from api.routers import chat, connections, export, query, upload
 from core.config import settings
 from core.logging_config import setup_logging
 
@@ -97,6 +97,7 @@ app.include_router(chat.router,        prefix="/api/v1", tags=["chat"])
 app.include_router(connections.router, prefix="/api/v1", tags=["connections"])
 app.include_router(query.router,       prefix="/api/v1", tags=["query"])
 app.include_router(export.router,      prefix="/api/v1", tags=["export"])
+app.include_router(upload.router,      prefix="/api/v1", tags=["upload"])
 
 
 # ---------------------------------------------------------------------------

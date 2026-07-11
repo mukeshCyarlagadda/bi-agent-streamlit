@@ -6,8 +6,11 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
+from sqlalchemy import create_engine, inspect, text
 
 from agent.graph import initialize_dag
 from api.dependencies import get_session
@@ -58,6 +61,7 @@ async def connect(req: ConnectRequest, _user: dict = Depends(get_current_user)) 
         db_type=req.db_type,
         dag=dag,
         tables=tables,
+        user_id=_user["id"],
         instructions=instructions,
     )
     logger.info("Session created: %s (%s, %d tables)", session_id[:8], req.db_type, len(tables))
@@ -76,8 +80,98 @@ async def list_tables(session: Session = Depends(get_session)) -> dict:
     return {"tables": session.tables, "db_type": session.db_type}
 
 
+@router.get("/preview")
+async def preview_data(
+    table: str = Query(default=""),
+    limit: int = Query(default=100, le=500),
+    session: Session = Depends(get_session),
+) -> dict:
+    """
+    Return up to *limit* rows from the session's database for preview.
+    Works for any session type — file uploads, SQLite, Postgres, etc.
+    """
+    try:
+        engine = create_engine(session.db_uri)
+        with engine.connect() as conn:
+            inspector = inspect(engine)
+            tables = inspector.get_table_names()
+            if not tables:
+                return {"columns": [], "rows": [], "total": 0, "table": ""}
+            tbl = table if table in tables else tables[0]
+            result = conn.execute(text(f'SELECT * FROM "{tbl}" LIMIT :lim'), {"lim": limit})
+            cols = list(result.keys())
+            rows = [list(r) for r in result.fetchall()]
+            total = conn.execute(text(f'SELECT COUNT(*) FROM "{tbl}"')).scalar() or 0
+        engine.dispose()
+        return {"columns": cols, "rows": rows, "total": int(total), "table": tbl}
+    except Exception as exc:
+        logger.error("Preview failed for session %s: %s", session.session_id[:8], exc)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc))
+
+
 @router.delete("/disconnect", status_code=status.HTTP_204_NO_CONTENT)
 async def disconnect(session: Session = Depends(get_session)) -> None:
     """Remove the session from memory."""
     session_store.delete(session.session_id)
     logger.info("Session deleted: %s", session.session_id[:8])
+
+
+class ReconnectFileRequest(BaseModel):
+    db_path: str
+
+
+@router.post("/reconnect-file", response_model=ConnectResponse, status_code=status.HTTP_201_CREATED)
+async def reconnect_file(
+    req: ReconnectFileRequest,
+    _user: dict = Depends(get_current_user),
+) -> ConnectResponse:
+    """
+    Re-create a backend session from a previously uploaded SQLite file path.
+    Called when the in-memory session has expired (e.g. after a server restart)
+    but the SQLite file still exists on disk.
+    """
+    p = Path(req.db_path)
+    if not p.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="SQLite file not found on disk. Please re-upload the file.",
+        )
+
+    db_uri = f"sqlite:///{req.db_path}"
+    try:
+        engine = create_engine(db_uri)
+        with engine.connect() as conn:
+            inspector = inspect(engine)
+            tables = inspector.get_table_names()
+        engine.dispose()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not open SQLite file: {exc}",
+        )
+
+    try:
+        dag, instructions = initialize_dag(db_uri, db_type="sqlite", tables=tables)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to initialise agent: {exc}",
+        )
+
+    session_id = session_store.create(
+        db_uri=db_uri,
+        db_type="file",
+        dag=dag,
+        tables=tables,
+        user_id=_user["id"],
+        instructions=instructions,
+    )
+    logger.info("File reconnected: %s | user=%s", session_id[:8], _user["id"][:8])
+
+    return ConnectResponse(
+        session_id=session_id,
+        db_type="file",
+        tables=tables,
+        message=f"Reconnected to {p.name}",
+        db_path=req.db_path,
+    )

@@ -37,6 +37,7 @@ class Session:
     db_uri: str
     db_type: str
     dag: Any                               # compiled LangGraph CompiledGraph
+    user_id: str = ""                      # Supabase user UUID — enforces data isolation
     instructions: str = ""
     tables: List[str] = field(default_factory=list)
     chat_history: List[ChatEntry] = field(default_factory=list)
@@ -57,6 +58,7 @@ class SessionStore:
         db_type: str,
         dag: Any,
         tables: List[str],
+        user_id: str = "",
         instructions: str = "",
     ) -> str:
         session_id = str(uuid.uuid4())
@@ -65,6 +67,7 @@ class SessionStore:
             db_uri=db_uri,
             db_type=db_type,
             dag=dag,
+            user_id=user_id,
             instructions=instructions,
             tables=tables,
         )
