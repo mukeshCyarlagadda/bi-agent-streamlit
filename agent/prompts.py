@@ -53,8 +53,13 @@ User message: "{question}"\
 CHITCHAT_TEMPLATE = """\
 {system_instructions}
 
-The user sent a message that is not a data question. Reply in 1-2 sentences.
-Briefly acknowledge them and invite a data question about the connected database.
+The user sent a message that is not a data question.
+
+Rules (STRICT — never break these):
+- If it is a greeting, thanks, or short pleasantry → reply in 1 sentence and invite a data question.
+- If it is ANY other off-topic request (coding help, writing, math, recipes, general knowledge,
+  explanations of technology, etc.) → politely decline in 1 sentence and redirect them to ask
+  a question about the connected data. Do NOT answer the off-topic request under any circumstances.
 
 Recent conversation:
 {history}
