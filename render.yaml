@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: bi-agent-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false          # set manually in Render dashboard
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: EXTRA_ALLOWED_ORIGINS
+        sync: false          # set to your Vercel URL after deploying frontend
+      - key: LOG_FORMAT
+        value: json
+      - key: PYTHON_VERSION
+        value: 3.12.0

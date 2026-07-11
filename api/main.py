@@ -81,9 +81,13 @@ app = FastAPI(
 # RequestLoggingMiddleware runs outermost — it sees the true request before CORS
 # touches it and captures the real status code after CORS adds its headers.
 # ---------------------------------------------------------------------------
+_cors_origins = list(settings.allowed_origins)
+if settings.extra_allowed_origins:
+    _cors_origins += [o.strip() for o in settings.extra_allowed_origins.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins,
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -20,8 +20,9 @@ class Settings(BaseSettings):
     # SQL
     sql_result_limit: int = 500          # max rows returned per query
 
-    # CORS — list the origins that are allowed to call the API.
-    # In dev: Streamlit's port.  In prod: your actual domain.
+    # CORS — comma-separated list of allowed origins.
+    # Set ALLOWED_ORIGINS env var in production, e.g.:
+    #   ALLOWED_ORIGINS=https://your-app.vercel.app,https://your-custom-domain.com
     allowed_origins: List[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
@@ -32,6 +33,9 @@ class Settings(BaseSettings):
         "http://localhost:8501",
         "http://127.0.0.1:8501",
     ]
+
+    # Extra origins from env var (comma-separated) — merged at startup
+    extra_allowed_origins: str = ""
 
     # Chart output directory (server-side PNGs, cleaned after encoding)
     charts_dir: str = "generated_charts"
