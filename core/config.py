@@ -13,9 +13,17 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # LLM
+    # LLM — shared default
     openai_api_key: str = ""
-    openai_model: str = "gpt-4o-mini"
+    openai_model: str = "gpt-4o-mini"   # fallback if per-node model not set
+
+    # Per-node model overrides.
+    # Set in .env or Render env vars to tune cost vs quality per node.
+    # e.g. MODEL_SQL=gpt-4o for production-grade SQL accuracy.
+    model_classify: str = "gpt-4o-mini"  # just picks data|chitchat + chart|table
+    model_chitchat: str = "gpt-4o-mini"  # persona/guardrail replies
+    model_sql: str = "gpt-4o-mini"       # most critical — set gpt-4o in prod
+    model_chart: str = "gpt-4o-mini"     # generates plotly code
 
     # SQL
     sql_result_limit: int = 500          # max rows returned per query

@@ -63,7 +63,7 @@ from agent.nodes import (
     route_by_intent,
     state_printer,
 )
-from agent.prompts import sql_generation_prompt
+from agent.prompts import get_sql_generation_prompt
 from agent.state import GraphState
 from core.config import settings
 
@@ -90,26 +90,22 @@ def _load_instructions(db_type: str, tables: list[str]) -> str:
 
 
 def build_graph(sql_generator) -> object:
-    # Classify + chitchat — short outputs, no token budget needed
-    llm = ChatOpenAI(
-        model=settings.openai_model,
-        api_key=settings.openai_api_key,
-        max_tokens=512,
-    )
-    # Chart code generation — needs room for multi-line Plotly scripts
-    llm_chart = ChatOpenAI(
-        model=settings.openai_model,
-        api_key=settings.openai_api_key,
-        max_tokens=1024,
-    )
+    def _llm(model: str, max_tokens: int) -> ChatOpenAI:
+        return ChatOpenAI(model=model, api_key=settings.openai_api_key, max_tokens=max_tokens)
+
+    # Each node gets its own model — tune MODEL_CLASSIFY / MODEL_SQL / etc in env vars.
+    llm_classify = _llm(settings.model_classify, 32)    # only outputs "INTENT: x\nTAG: y"
+    llm_chitchat = _llm(settings.model_chitchat, 256)   # short user-facing replies
+    llm_chart    = _llm(settings.model_chart, 1024)     # plotly code needs more room
+
     workflow = StateGraph(GraphState)
 
     # Async wrappers — Python has no async lambda
     async def _classify_question(s):
-        return await classify_question(s, llm)
+        return await classify_question(s, llm_classify)
 
     async def _handle_chitchat(s):
-        return await handle_chitchat(s, llm)
+        return await handle_chitchat(s, llm_chitchat)
 
     async def _generate_sql(s):
         return await generate_sql(s, sql_generator)
@@ -172,11 +168,12 @@ def initialize_dag(db_uri: str, db_type: str = "", tables: list[str] | None = No
         db_type, len(tables), db_uri,
     )
     db = SQLDatabase.from_uri(db_uri)
-    llm_for_sql = ChatOpenAI(model=settings.openai_model, api_key=settings.openai_api_key)
+    # SQL node gets the strongest model + dialect-specific prompt.
+    llm_for_sql = ChatOpenAI(model=settings.model_sql, api_key=settings.openai_api_key)
     sql_generator = create_sql_query_chain(
         llm=llm_for_sql, db=db,
         k=settings.sql_result_limit,
-        prompt=sql_generation_prompt,
+        prompt=get_sql_generation_prompt(db_type),
     )
     instructions = _load_instructions(db_type, tables)
     dag = build_graph(sql_generator)

@@ -32,7 +32,10 @@ from sqlalchemy import create_engine
 
 from agent.prompts import (
     CHART_GENERATION_TEMPLATE,
+    CHART_SYSTEM_PROMPT,
+    CHITCHAT_SYSTEM_PROMPT,
     CHITCHAT_TEMPLATE,
+    CLASSIFY_SYSTEM_PROMPT,
     CLASSIFY_TEMPLATE,
 )
 from agent.state import GraphState
@@ -131,7 +134,8 @@ async def classify_question(state: GraphState, llm) -> dict:
     """Single LLM call → intent (data|chitchat) + tag (chart|table)."""
     prompt = CLASSIFY_TEMPLATE.format(question=state["question"])
     try:
-        response = await llm.ainvoke([_system_msg(state), HumanMessage(content=prompt)])
+        # No DB schema or persona needed — just a compact classifier system prompt.
+        response = await llm.ainvoke([SystemMessage(content=CLASSIFY_SYSTEM_PROMPT), HumanMessage(content=prompt)])
     except Exception as exc:
         category = classify_sql_error(exc)
         logger.error(
@@ -173,12 +177,12 @@ async def classify_question(state: GraphState, llm) -> dict:
 
 async def handle_chitchat(state: GraphState, llm) -> dict:
     prompt = CHITCHAT_TEMPLATE.format(
-        system_instructions=state.get("system_instructions", ""),
         history=_fmt_history(state.get("chat_history", [])),
         question=state["question"],
     )
     try:
-        response = await llm.ainvoke([HumanMessage(content=prompt)])
+        # Focused system prompt: guardrails + persona only. No DB schema.
+        response = await llm.ainvoke([SystemMessage(content=CHITCHAT_SYSTEM_PROMPT), HumanMessage(content=prompt)])
         reply = response.content.strip()
     except Exception as exc:
         logger.error("handle_chitchat LLM error: %s", exc)
@@ -467,7 +471,8 @@ async def generate_chart_instructions(state: GraphState, llm) -> dict:
         sample=df_sample,
     )
     try:
-        response = await llm.ainvoke([_system_msg(state), HumanMessage(content=prompt)])
+        # Chart node only needs Plotly expertise — no BI persona or DB schema.
+        response = await llm.ainvoke([SystemMessage(content=CHART_SYSTEM_PROMPT), HumanMessage(content=prompt)])
         chart_script = extract_python_code(response)
     except Exception as exc:
         logger.error(
