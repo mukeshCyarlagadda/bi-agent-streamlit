@@ -5,26 +5,35 @@ POST /query/approve — resume a graph that is waiting at a HITL interrupt
 from __future__ import annotations
 
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from api.dependencies import get_session
+from api.dependencies import get_optional_session, get_session
 from api.models.query import ApproveRequest, QueryRequest, QueryResponse
 from api.session_store import Session
 from core.auth import get_current_user
-from services.query_service import resume_query, run_query
+from services.query_service import resume_query, run_general_query, run_query
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 @router.post("/query", response_model=QueryResponse)
-async def query(req: QueryRequest, session: Session = Depends(get_session), _user: dict = Depends(get_current_user)) -> QueryResponse:
+async def query(
+    req: QueryRequest,
+    session: Optional[Session] = Depends(get_optional_session),
+    _user: dict = Depends(get_current_user),
+) -> QueryResponse:
     if not req.question.strip():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Question cannot be empty.",
         )
+
+    if session is None:
+        return await run_general_query(req.question)
+
     if session.pending_thread_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

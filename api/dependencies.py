@@ -11,10 +11,27 @@ get_session:
 """
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import Depends, Header, HTTPException, status
 
 from api.session_store import Session, session_store
 from core.auth import get_current_user
+
+
+async def get_optional_session(
+    x_session_id: Optional[str] = Header(default=None),
+    user: dict = Depends(get_current_user),
+) -> Optional[Session]:
+    """Like get_session but returns None instead of raising when no session exists."""
+    if not x_session_id:
+        return None
+    session = session_store.get(x_session_id)
+    if session is None:
+        return None
+    if session.user_id and session.user_id != user["id"]:
+        return None
+    return session
 
 
 async def get_session(

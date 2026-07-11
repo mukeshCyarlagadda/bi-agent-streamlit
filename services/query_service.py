@@ -155,6 +155,32 @@ def _extract_result(steps: dict, session: "Session", question: str) -> QueryResp
     )
 
 
+async def run_general_query(question: str) -> QueryResponse:
+    """Respond to a question when no database session is active."""
+    from openai import AsyncOpenAI
+    from core.config import settings
+
+    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    resp = await client.chat.completions.create(
+        model=settings.openai_model,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a friendly BI (Business Intelligence) assistant. "
+                    "No database is currently connected. "
+                    "Answer general questions helpfully. "
+                    "For data or analysis questions, politely ask the user to connect a database or upload a file first."
+                ),
+            },
+            {"role": "user", "content": question},
+        ],
+        max_tokens=500,
+    )
+    message = resp.choices[0].message.content or "Hi! Connect a database or upload a file to start analyzing your data."
+    return QueryResponse(result_type="message", message=message)
+
+
 async def run_query(question: str, session: "Session") -> QueryResponse:
     logger.info("Query start: %.80s", question, extra={"session_id": session.session_id[:8]})
 
